@@ -7,8 +7,16 @@ from fastapi import FastAPI, Depends, Query, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
-from database import get_db, ClinicalTrial, init_db
+from database import get_db, ClinicalTrial, ParsedEligibility, init_db
 from seed import seed as run_seed
+from parsers import parse_patient_profile
+from matcher import match_patient_to_trial
+from pydantic import BaseModel
+
+
+class MatchRequest(BaseModel):
+    description: str
+
 
 app = FastAPI(title="Clinical Trial Matcher")
 
@@ -189,6 +197,91 @@ def get_trial(nct_id: str, db: Session = Depends(get_db)):
         "phase": trial.phase,
         "sponsor": trial.sponsor,
         "last_updated": trial.last_updated.isoformat() if trial.last_updated else None,
+    }
+
+
+@app.post("/api/match")
+def match_patient(
+    request: MatchRequest,
+    status: str = Query(None, description="Comma-separated list of statuses to include (qualified, likely_qualified, unknown, excluded)"),
+    limit: int = Query(None, description="Maximum number of results to return"),
+    db: Session = Depends(get_db),
+):
+    if not request.description or not request.description.strip():
+        raise HTTPException(status_code=400, detail="description cannot be empty")
+
+    try:
+        patient_profile = parse_patient_profile(request.description)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to parse patient profile: {str(e)}")
+
+    rows = (
+        db.query(ParsedEligibility, ClinicalTrial)
+        .join(ClinicalTrial, ParsedEligibility.trial_id == ClinicalTrial.id)
+        .all()
+    )
+
+    summary = {"qualified": 0, "likely_qualified": 0, "unknown": 0, "excluded": 0}
+    all_results = []
+
+    for parsed, trial in rows:
+        eligibility = {
+            "min_age": parsed.min_age,
+            "max_age": parsed.max_age,
+            "sex_restriction": parsed.sex_restriction,
+            "included_conditions": parsed.included_conditions or [],
+            "excluded_conditions": parsed.excluded_conditions or [],
+            "excluded_medications": parsed.excluded_medications or [],
+            "excluded_allergies": parsed.excluded_allergies or [],
+            "other_notes": parsed.other_notes,
+        }
+
+        match = match_patient_to_trial(patient_profile, eligibility)
+
+        if match["status"] in summary:
+            summary[match["status"]] += 1
+
+        all_results.append({
+            "nct_id": trial.nct_id,
+            "title": trial.title,
+            "status": match["status"],
+            "score": match["score"],
+            "reasons": match["reasons"],
+            "matched_conditions": match["matched_conditions"],
+            "trial": {
+                "id": trial.id,
+                "nct_id": trial.nct_id,
+                "title": trial.title,
+                "status_text": trial.status,
+                "condition": trial.condition,
+                "phase": trial.phase,
+                "sponsor": trial.sponsor,
+                "location_city": trial.location_city,
+                "location_state": trial.location_state,
+                "location_country": trial.location_country,
+                "description": trial.description,
+                "eligibility_criteria": trial.eligibility_criteria,
+            },
+        })
+
+    total_before_filter = len(all_results)
+
+    filtered = all_results
+    if status is not None:
+        allowed = {s.strip().lower() for s in status.split(",") if s.strip()}
+        filtered = [r for r in filtered if r["status"] in allowed]
+
+    filtered.sort(key=lambda r: (-r["score"], r["nct_id"] or ""))
+
+    if limit is not None:
+        filtered = filtered[:limit]
+
+    return {
+        "patient_profile": patient_profile,
+        "total_before_filter": total_before_filter,
+        "summary": summary,
+        "returned": len(filtered),
+        "results": filtered,
     }
 
 

@@ -1,17 +1,21 @@
 # Clinical Trial Matcher
 
-Clinical Trial Matcher helps patients, caregivers, and researchers find relevant recruiting clinical trials from ClinicalTrials.gov based on their condition, location, and age. By applying a relevance scoring algorithm to a local database of 985+ real trials, it surfaces the most applicable studies first — making it easier to connect people with potentially life-changing research opportunities.
+A full-stack web application that matches patients to recruiting clinical trials from ClinicalTrials.gov based on their condition, location, and age. Results are ranked by a relevance scoring algorithm so the best-fit trials surface first.
 
 ---
 
-## Features
+## How It Works
 
-- **Condition, location, and age-based search** — filter trials across all three dimensions simultaneously
-- **Relevance scoring algorithm** — each result is scored 0–100 based on how closely it matches your search criteria, with the best matches ranked first
-- **985+ real trials from ClinicalTrials.gov** — seeded from the official v2 API across cancer, diabetes, heart disease, depression, and Alzheimer's
-- **Expandable trial details** — click "View Details" to reveal full descriptions and eligibility criteria
-- **Color-coded relevance scores** — green (≥70%), yellow (≥40%), and red (<40%) bars for at-a-glance matching quality
-- **PostgreSQL database** — fast local queries with deduplication across seeding runs
+1. The user enters a **condition** (e.g. `cancer`), **location** (e.g. `New York`), and/or **age** (e.g. `45`).
+2. The React frontend sends the query to the FastAPI backend.
+3. The backend filters the local PostgreSQL database of 985+ recruiting trials and scores each result:
+   - **Condition match** — up to 50 points (condition field > title > description)
+   - **Location match** — up to 30 points (city > state > country)
+   - **Age eligibility** — up to 20 points (within trial's min/max age range)
+4. Trials are returned ranked by relevance score (0–100) and displayed as cards with color-coded score bars.
+5. Clicking **View Details** reveals the full description and eligibility criteria for any trial.
+
+The local database is seeded by calling the ClinicalTrials.gov REST API v2 for five conditions (cancer, diabetes, heart disease, depression, Alzheimer's), fetching up to 200 recruiting trials each, and deduplicating by NCT ID.
 
 ---
 
@@ -19,14 +23,21 @@ Clinical Trial Matcher helps patients, caregivers, and researchers find relevant
 
 | Layer | Technology |
 |---|---|
-| Backend API | Python, FastAPI |
-| Database | PostgreSQL, SQLAlchemy |
-| Data Source | ClinicalTrials.gov API v2 |
+| Backend API | Python, FastAPI, Uvicorn |
+| Data processing | pandas, SQLAlchemy |
+| Database | PostgreSQL |
+| Data source | ClinicalTrials.gov API v2 |
 | Frontend | React, Axios |
 
 ---
 
 ## Setup
+
+### Prerequisites
+
+- Python 3.9+
+- Node.js 16+
+- PostgreSQL running locally
 
 ### 1. Clone the repository
 
@@ -53,40 +64,40 @@ venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-### 4. Set up PostgreSQL
+### 4. Configure environment variables
 
-Create the database using `psql` or your preferred PostgreSQL client:
-
-```sql
-CREATE DATABASE clinical_trials;
-```
-
-Confirm your `.env` file in the project root contains the correct connection string:
+Create a `.env` file in the project root:
 
 ```
 DATABASE_URL=postgresql://postgres:<your-password>@localhost/clinical_trials
 CLINICALTRIALS_API_URL=https://clinicaltrials.gov/api/v2/studies
 ```
 
-### 5. Seed the database
+### 5. Create the database
 
-This fetches 985+ recruiting trials from ClinicalTrials.gov and stores them locally. Expect it to take 1–2 minutes.
+```sql
+CREATE DATABASE clinical_trials;
+```
+
+### 6. Seed the database
+
+Fetches 985+ recruiting trials from ClinicalTrials.gov and stores them locally. Takes 1–2 minutes.
 
 ```bash
 cd backend
 python seed.py
 ```
 
-### 6. Start the backend
+### 7. Start the backend
 
 ```bash
 cd backend
 uvicorn main:app --reload
 ```
 
-The API will be available at `http://localhost:8000`.
+API available at `http://localhost:8000`.
 
-### 7. Start the frontend
+### 8. Start the frontend
 
 Open a new terminal:
 
@@ -96,27 +107,24 @@ npm install
 npm start
 ```
 
-The app will open at `http://localhost:3000`.
+App opens at `http://localhost:3000`.
 
 ---
 
 ## Usage
 
-1. Open `http://localhost:3000` in your browser.
-2. Enter any combination of:
-   - **Condition** — the disease or condition you're interested in (e.g. `cancer`, `diabetes`, `depression`)
-   - **Location** — a city, state, or country (e.g. `New York`, `Texas`, `United States`)
-   - **Age** — the patient's age in years (e.g. `45`)
+1. Open `http://localhost:3000`.
+2. Enter any combination of **condition**, **location**, and **age**.
 3. Click **Search Trials**.
-4. Results appear ranked by relevance score. Trials matching all three criteria score highest.
+4. Results appear ranked by relevance score — green (≥70), yellow (≥40), red (<40).
 5. Click **View Details** on any card to read the full description and eligibility criteria.
 
 ---
 
-## API Endpoints
+## API Reference
 
 | Method | Endpoint | Description |
 |---|---|---|
-| `GET` | `/api/trials` | Search trials by `condition`, `location`, `age` query params |
-| `GET` | `/api/trials/{nct_id}` | Retrieve a single trial by its NCT ID |
-| `POST` | `/api/seed` | Trigger a database seed from the ClinicalTrials.gov API |
+| `GET` | `/api/trials` | Search trials — accepts `condition`, `location`, `age`, `limit` query params |
+| `GET` | `/api/trials/{nct_id}` | Fetch a single trial by NCT ID |
+| `POST` | `/api/seed` | Trigger a database re-seed from ClinicalTrials.gov |

@@ -8,7 +8,7 @@ load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '..', '.env'))
 
 API_URL = os.getenv("CLINICALTRIALS_API_URL", "https://clinicaltrials.gov/api/v2/studies")
 
-CONDITIONS = ["cancer", "diabetes", "heart disease", "depression", "alzheimer's"]
+CONDITIONS = ["cancer", "diabetes", "heart disease", "depression", "alzheimers"]
 PAGE_SIZE = 100
 
 
