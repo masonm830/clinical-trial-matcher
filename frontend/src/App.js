@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import axios from 'axios';
 
-const API_BASE = 'http://localhost:8000';
+const API_BASE = process.env.REACT_APP_API_BASE || 'http://localhost:8000';
 
 const SAMPLE_DESCRIPTION = "I am a 42-year-old woman, diagnosed with stage 2 breast cancer six months ago. I'm currently taking tamoxifen and am allergic to sulfa drugs. I live in Phoenix, Arizona.";
 
